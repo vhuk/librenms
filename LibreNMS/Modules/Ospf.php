@@ -74,7 +74,7 @@ class Ospf implements Module
     public function poll(OS $os, DataStorageInterface $datastore): void
     {
         foreach ($os->getDevice()->getVrfContexts() as $context_name) {
-            echo ' Processes: ';
+            echo ' Processes: ' . PHP_EOL;
             ModuleModelObserver::observe(OspfInstance::class);
 
             // Pull data from device
@@ -109,7 +109,7 @@ class Ospf implements Module
                 return;
             }
 
-            echo ' Areas: ';
+            echo ' Areas: ' . PHP_EOL;
             ModuleModelObserver::observe(OspfArea::class);
 
             // Pull data from device
@@ -131,7 +131,7 @@ class Ospf implements Module
 
             echo $ospf_areas->count();
 
-            echo ' Ports: ';
+            echo ' Ports: ' . PHP_EOL;
             ModuleModelObserver::observe(OspfPort::class);
 
             // Pull data from device
@@ -162,7 +162,7 @@ class Ospf implements Module
 
             echo $ospf_ports->count();
 
-            echo ' Neighbours: ';
+            echo ' Neighbours: ' . PHP_EOL;
             ModuleModelObserver::observe(OspfNbr::class);
 
             // Pull data from device
@@ -190,7 +190,7 @@ class Ospf implements Module
 
             echo $ospf_neighbours->count();
 
-            echo ' TOS Metrics: ';
+            echo ' TOS Metrics: ' . PHP_EOL;
 
             // Pull data from device
             $ospf_ports_by_ip = $ospf_ports->keyBy('ospfIfIpAddress');
