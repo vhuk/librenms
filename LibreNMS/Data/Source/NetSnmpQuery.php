@@ -44,6 +44,8 @@ class NetSnmpQuery implements SnmpQueryInterface
 {
     private const DEFAULT_FLAGS = '-OQXUte';
 
+    public static array $commandCache;
+
     /**
      * @var array
      */
@@ -414,6 +416,16 @@ class NetSnmpQuery implements SnmpQueryInterface
             $measure = Measurement::start($command);
             $proc = new Process($this->buildCli($command, $oids));
             $proc->setTimeout(Config::get('snmp.exec_timeout', 1200));
+
+            self::$commandCache[]=[
+                'command' => $command,
+                'commandLine' => $proc->getCommandLine(),
+                'mibDirs' => $this->mibDirectories(),
+                'mibs' => $this->mibs,
+                'oids' => $oids,
+                'context' => $this->context,
+            ];
+
 
             $this->logCommand($proc->getCommandLine());
 

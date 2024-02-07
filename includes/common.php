@@ -32,6 +32,10 @@ use Symfony\Component\Process\Process;
  */
 function external_exec($command)
 {
+    global $snmpCommandCache;
+    if (! isset($snmpCommandCache)) {
+        $snmpCommandCache=[];
+    }
     $device = DeviceCache::getPrimary();
 
     $proc = new Process($command);
@@ -66,6 +70,8 @@ function external_exec($command)
     } elseif (Debug::isVerbose()) {
         c_echo('SNMP[%c' . $proc->getCommandLine() . "%n]\n");
     }
+
+    $snmpCommandCache[]=$proc->getCommandLine();
 
     $proc->run();
     $output = $proc->getOutput();

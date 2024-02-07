@@ -32,6 +32,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use LibreNMS\Config;
+use LibreNMS\Data\Source\NetSnmpQuery;
 use LibreNMS\Data\Source\SnmpResponse;
 use LibreNMS\Exceptions\FileNotFoundException;
 use LibreNMS\Exceptions\InvalidModuleException;
@@ -163,6 +164,50 @@ class ModuleTestHelper
         }
     }
 
+    private function getGlobalCommandCache():array {
+        global $snmpCommandCache;
+
+        $res=[];
+        foreach ($snmpCommandCache as $commandLine) {
+            if (preg_match('/\'(.*(?P<command>walk|get|getnext))\' .* \'((?:udp|tcp):[^:]+:[0-9]+)\' (?P<oids>\'.*\')$/',$commandLine,$matches) !== 1) {
+                continue;
+            }
+            $oids=explode(' ' ,$matches['oids']);
+            $oids=array_map(fn ($oid) => trim($oid,"'"),$oids);
+            $command=$matches['command'];
+
+            if (preg_match('/\'-M\' \'(?P<mibDirs>[^ ]+)\'/',$commandLine,$matches) === 1) {
+                $mibDirs=$matches['mibDirs'];
+            } else {
+                $mibDirs='';
+            }
+
+            if (preg_match('/\'-m\' \'(?P<mibs>[^ ]+)\'/',$commandLine,$matches) === 1) {
+                $mibs=explode(':',$matches['mibs']);
+            } else {
+                $mibs='';
+            }
+
+            if (preg_match('/\'-n\' \'(?P<context>[^ ]+)\'/',$commandLine,$matches) === 1) {
+                $context=$matches['context'];
+            } else {
+                $context='';
+            }
+
+
+            $res[]=[
+                'command' => $command,
+                'commandLine' => $commandLine,
+                'mibDirs' => $mibDirs,
+                'mibs' => $mibs,
+                'oids' => $oids,
+                'context' => $context,
+            ];
+        }
+
+        return $res;
+    }
+
     private function collectOids($device_id)
     {
         global $device;
@@ -170,52 +215,30 @@ class ModuleTestHelper
         $device = device_by_id_cache($device_id);
         DeviceCache::setPrimary($device_id);
 
-        // Run discovery
-        ob_start();
-        $save_debug = Debug::isEnabled();
-        $save_vdebug = Debug::isVerbose();
-        Debug::set();
-        Debug::setVerbose();
         discover_device($device, $this->parseArgs('discovery'));
         $poller = app(Poller::class, ['device_spec' => $device_id, 'module_override' => $this->modules]);
         $poller->poll();
-        Debug::set($save_debug);
-        Debug::setVerbose($save_vdebug);
-        $collection_output = ob_get_contents();
-        ob_end_clean();
 
-        d_echo($collection_output);
-        d_echo(PHP_EOL);
-
-        // remove color
-        $collection_output = preg_replace('/\033\[[\d;]+m/', '', $collection_output);
-
-        // extract snmp queries
-        $snmp_query_regex = '/^SNMP\[\'.*snmp(?:bulk)?(walk|get|getnext)\' .+\'(udp|tcp|tcp6|udp6):(?:\[[0-9a-f:]+\]|[^:]+):[0-9]+\' \'(.+)\'\]$/m';
-        preg_match_all($snmp_query_regex, $collection_output, $snmp_matches);
-
-        // extract mibs and group with oids
         $snmp_oids = [
             null => [
                 'sysDescr.0_get' => ['oid' => 'sysDescr.0', 'mib' => 'SNMPv2-MIB', 'method' => 'get'],
                 'sysObjectID.0_get' => ['oid' => 'sysObjectID.0', 'mib' => 'SNMPv2-MIB', 'method' => 'get'],
             ],
         ];
-        foreach ($snmp_matches[0] as $index => $line) {
-            preg_match("/'-m' '\+?([a-zA-Z0-9:\-]+)'/", $line, $mib_matches);
-            $mib = $mib_matches[1] ?? null;
-            preg_match("/'-M' '\+?([a-zA-Z0-9:\-\/]+)'/", $line, $mibdir_matches);
-            $mibdir = $mibdir_matches[1];
-            $method = $snmp_matches[1][$index];
-            $oids = explode("' '", trim($snmp_matches[3][$index]));
-            preg_match("/('-c' '.*@([^']+)'|'-n' '([^']+)')/", $line, $context_matches);
-            $context = $context_matches[2] ?? $context_matches[3] ?? null;
 
-            foreach ($oids as $oid) {
-                $snmp_oids[$context]["{$oid}_$method"] = [
+        $commandCache=array_merge(NetSnmpQuery::$commandCache, $this->getGlobalCommandCache());
+
+        foreach ($commandCache as $cacheEntry) {
+            foreach ($cacheEntry['oids'] as $oid) {
+                $method=$cacheEntry['command'];
+                if (str_starts_with($method,'snmp')) {
+                    $method=substr($method,4);
+                }
+
+                $snmp_oids[$cacheEntry['context']]["{$oid}_$method"] = [
                     'oid' => $oid,
-                    'mib' => $mib,
-                    'mibdir' => $mibdir,
+                    'mib' => is_string($cacheEntry['mibs']) ? $cacheEntry['mibs'] : implode(':',$cacheEntry['mibs']),
+                    'mibdir' => $cacheEntry['mibDirs'],
                     'method' => $method,
                 ];
             }
